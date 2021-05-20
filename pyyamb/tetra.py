@@ -3,8 +3,9 @@ from Bio import SeqIO
 import sys
 import regex
 
-#Upper case only :(
-def compl(c):
+
+def compl(c: str) -> str:
+	c = c.upper()
 	if c == 'A':
 		return 'T'
 	elif c == 'C':
@@ -16,10 +17,12 @@ def compl(c):
 	else:
 		return c
 
-def rev_compl(s) -> str :
+
+def rev_compl(s: str) -> str :
 	return ''.join(list(map(compl, s[::-1])))
 
-#Create a list of tetranucleotides different from their revcomp
+
+# Create a list of tetranucleotides different from their revcomp
 def make_tn_list():
 	nr_tn = []
 	acgt = ['A','C','G','T']
@@ -28,7 +31,8 @@ def make_tn_list():
 		if rev_compl(x) not in nr_tn:
 			nr_tn.append(x)
 	return nr_tn
-	
+
+
 def tn_freq(seqlist):
 	tnlist = make_tn_list()
 	patterns = [(i, regex.compile(i)) for i in tnlist]
