@@ -3,7 +3,7 @@ from Bio import SeqIO
 import sys
 import regex
 import os
-
+import pandas
 
 def compl_DNA(c) -> str:
 	'''Return complemetary nucleotide'''
@@ -42,30 +42,33 @@ def make_kmer_list(k=4, nr=True):
 		return nr_kmers
 
 
-def kmers_freq(seqlist, kmers):
-	'''Yield kmer frequence in DNA sequence list'''
+def kmers_freq(records, kmers):
+	'''Yield kmer frequence in FASTA file'''
 	patterns = [(i, regex.compile(i)) for i in kmers]
 	klen = len(kmers[0])
-	for (id, seq) in seqlist:
+	for record in records:
 		d={}
-		l = len(seq)
+		seq_len = len(record.seq)
+		seq = str(record.seq)
 		for (i,j) in patterns:
-			d[i] = len(regex.findall(j, str(seq), overlapped=True))
+			d[i] = len(regex.findall(j, seq, overlapped=True))
+		seq_rc = str(record.seq.reverse_complement())
 		for (i,j) in patterns:
-			d[i] = d.get(i, 0) + len(regex.findall(j, str(seq.reverse_complement()), overlapped=True))
-		p = "\t".join([str(1000*d.get(i,0) / (2*(l - klen))) for i in tnlist])
-		yield f"{id}\t{p}"
+			d[i] = d.get(i, 0) + len(regex.findall(j, seq_rc, overlapped=True))
+		yield [record.id, seq_len] + [1000 * d.get(i, 0) / (2 * (seq_len - klen)) for i in kmers]
 
 
-def main(filename):
-	outfilename = f"tn.{os.path.basename(filename)}.tsv"
-	g = ((record.id, record.seq) for record in SeqIO.parse(filename, "fasta"))
+
+def kmer_freq_table(filename):
+	outfilename = f"tn.{os.path.basename(filename)}.csv"
 	kmer_list = make_kmer_list(k=4, nr=True)
-	with open(outfilename, 'w') as OF:
-		for lane in kmers_freq(g, kmer_list):
-			print(lane, file=OF)
+	return pandas.DataFrame.from_records(
+		kmers_freq(SeqIO.parse(filename, "fasta"), kmer_list),
+		columns=['fragment', 'length'] + kmer_list,
+		index='fragment')
 
 
 if __name__ == '__main__':
-	main(sys.argv[1])
+	outfilename = f"tn.{os.path.basename(filename)}.csv"
+	kmer_freq_table(sys.argv[1]).to_csv(outfilename)
 
