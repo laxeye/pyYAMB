@@ -4,10 +4,10 @@ from pyyamb.utils import run_external
 
 
 def map_reads(assembly, reads, target="mapping.sam", threads=1):
-	logger = logging.getLogger()
+	logger = logging.getLogger("main")
 	cmd = ["minimap2",
 		"-x", "sr", "-t", str(threads),
-		"-a", "-o", target, assembly, reads]
+		"-a", "-o", target, assembly, *reads]
 
 	logger.info("Mapping reads: %s", reads)
 	if run_external(cmd).returncode == 0:
