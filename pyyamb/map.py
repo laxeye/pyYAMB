@@ -1,17 +1,27 @@
 #!/usr/bin/env python3
 import logging
+import os
 from pyyamb.utils import run_external
 
 
-def map_reads(assembly, reads, target="mapping.sam", threads=1):
+def map_reads(args):
 	logger = logging.getLogger("main")
-	cmd = ["minimap2",
-		"-x", "sr", "-t", str(threads),
-		"-a", "-o", target, assembly, *reads]
+	target = os.path.join(args.output, "mapping.sam")
+	if args.single_end:
+		# Only first single-end reads file is currently mapped
+		reads = [args.single_end[0]]
+	if args.pe_1 and args.pe_1:
+		# Only one pair of reads is currently mapped
+		reads = list(zip(args.pe_1, args.pe_2))[0]
 
-	logger.info("Mapping reads: %s", reads)
-	if run_external(cmd).returncode == 0:
+	cmd = ["minimap2",
+		"-x", "sr", "-t", str(args.threads),
+		"-a", "-o", target, args.assembly, *reads]
+
+	try:
+		logger.info("Mapping reads: %s", ", ".join(reads))
+		run_external(cmd)
 		return target
-	else:
+	except Exception as e:
 		logger.error("Unsuccesful mapping.")
-		return None
+		raise e

@@ -23,15 +23,23 @@ def parse_args():
 
 	general_args = parser.add_argument_group(title="General options", description="")
 	general_args.add_argument("--task", help="Task of pipeline", required=True,
-		choices=["all", "assemble", "cut", "tetra", "tsne", "map", "bin", "checkm"])
-	general_args.add_argument("--mapper", help="Mapping software",
-		choices=["minimap2", "bwa", "bowtie2"], default="minimap2")
+		choices=["all", "cut", "tetra", "clustering", "map"])
+	general_args.add_argument("--mapper", help="Mapping software, currently minimap2 only",
+		choices=["minimap2"], default="minimap2")
 	general_args.add_argument("-t", "--threads", type=int, default=1,
 		help="Number of CPU threads to use (where possible), default 1.")
 	general_args.add_argument("-m", "--memory-limit", type=int, default=16,
 		help="Memory limit in GB, default 16.")
 	general_args.add_argument("-o", "--output", type=str, required=True,
 		help="Output directory")
+	general_args.add_argument("--min-length", default=1000, type=int,
+		help="minimum contig length")
+	general_args.add_argument("--fragment-length", default=10000, type=int,
+		help="Target length of contig fragments")
+	general_args.add_argument("--perplexity", default=50, type=int,
+		help="Perplexity parameter for tSNE.")
+	general_args.add_argument("--k-len", default=4, type=int,
+		help="Length of k-mer, default: 4.")
 
 	input_args = parser.add_argument_group(title="Input files and options")
 	input_args.add_argument("-1", "--pe-1", nargs='+',
@@ -42,24 +50,18 @@ def parse_args():
 		help="Sinle-end reads, FASTQ. Space-separated if multiple.")
 	input_args.add_argument("-i", "--assembly",
 		help="Previously assembled metagenome.")
+	input_args.add_argument("--kmers-data",
+		help="Previously calculated kmer-freqs.")
 
-	asly_args = parser.add_argument_group(title="Assembly settings")
+	'''asly_args = parser.add_argument_group(title="Assembly settings")
 	asly_args.add_argument("-a", "--assembler",
 		default="unicycler", choices=["spades", "megahit"],
 		help="Assembler: 'spades' or 'megahit'.")
 	asly_args.add_argument("--spades-correction", action="store_true",
 		help="Perform short read correction by SPAdes (not recommended).")
 	asly_args.add_argument("--spades-k-list",
-		help="SPAdes: List of kmers, comma-separated even numbers e.g. '21,33,55,77'")
+		help="SPAdes: List of kmers, comma-separated even numbers e.g. '21,33,55,77'")'''
 
-	parser.add_argument("--min-length", default=1000, type=int,
-		help="minimum contig length")
-	parser.add_argument("--fragment-length", default=10000, type=int,
-		help="Target length of contig fragments")
-	parser.add_argument("--perplexity", default=50, type=int,
-		help="Perplexity parameter for tSNE.")
-	parser.add_argument("--kmers-data",
-		help="Previously calculated kmer-freqs.")
 
 	args = parser.parse_args()
 
@@ -73,15 +75,14 @@ def parse_args():
 			raise e
 
 	'''Check input'''
-
 	if args.assembly:
-		if os.path.isfile(args.assembly):
-			args.assembly = os.path.abspath(args.assembly)
-		else:
+		args.assembly = os.path.abspath(args.assembly)
+		if not os.path.isfile(args.assembly):
 			raise FileNotFoundError(args.assembly)
 
 	if args.single_end:
 		args.single_end = list(map(os.path.abspath, args.single_end))
+
 	if args.pe_1:
 		args.pe_1 = list(map(os.path.abspath, args.pe_1))
 		args.pe_2 = list(map(os.path.abspath, args.pe_2))
@@ -89,11 +90,16 @@ def parse_args():
 			if not os.path.isfile(f):
 				raise FileNotFoundError(f"Input file {f} not found!")
 
+	if args.kmers_data:
+		args.kmers_data = os.path.abspath(args.kmers_data)
+		if not os.path.isfile(args.kmers_data):
+			raise FileNotFoundError(f"Input file {f} not found!")
+
 	return args
 
 
-def createLogger():
-	'''Init logger'''
+def create_logger():
+	'''Create logger'''
 	logger = logging.getLogger("main")
 	logger.setLevel(logging.DEBUG)
 	formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
@@ -104,10 +110,27 @@ def createLogger():
 	return logger
 
 
+def extract_coverage(bamfile, fasta):
+	'''Extract coverage from sorted and indexed BAM-file for every contig in FASTA-file
+
+	Args:
+		bamfile (path): Path to sorted and indexed mapping file in BAM format
+		fasta (path): Path to metagenome fragments in FASTA format
+
+	Returns:
+		pandas.DataFrame
+	'''
+	with pysam.AlignmentFile(bamfile) as bam_handle:
+		contig_list = [record.id for record in SeqIO.parse(fasta, 'fasta')]
+		d = {contig: mean(bam_handle.count_coverage(contig=contig)) for contig in contig_list}
+	return pandas.DataFrame.from_dict(d, orient='index', columns=['coverage'])
+
+
 def main():
-	logger = createLogger()
+	logger = create_logger()
 	args = parse_args()
 	logger.info("Analysis started")
+	mg_data = pandas.DataFrame()
 
 	'''Process reads'''
 
@@ -122,95 +145,85 @@ def main():
 			logger.error("Error during contig fragmentation.")
 			raise e
 
-	if args.task == "map" or args.task == 'all':
-		'''Map reads with minimap2'''
-		target = os.path.join(args.output, "mapping.sam")
-		mapping_bam_file = os.path.join(args.output, 'mapping.bam')
-		if args.single_end:
-			# Only first single-end reads file is currently mapped
-			reads = [args.single_end[0]]
-		if args.pe_1 and args.pe_1:
-			# Only one pair of reads is currently mapped
-			reads = list(zip(args.pe_1, args.pe_2))[0]
-		mapping_sam_file = map_reads(args.assembly, reads, target, args.threads)
-		logger.info("Converting mapping file")
-		with open(mapping_bam_file, 'wb') as h:
-			h.write(pysam.view('-@', str(args.threads), '-u', '-F', '4', mapping_sam_file))
-		sorted_mapping_bam_file = os.path.join(args.output, 'mapping.sorted.bam')
-		logger.info("Sorting mapping file")
-		pysam.sort('-@', str(args.threads), '-o', sorted_mapping_bam_file, mapping_bam_file)
-		logger.info("Indexing mapping file")
-		pysam.samtools.index(sorted_mapping_bam_file)
-		logger.info("Extracting coverage")
-		bam_handle = pysam.AlignmentFile(sorted_mapping_bam_file)
-		contig_list = [record.id for record in SeqIO.parse(args.assembly, 'fasta')]
-		d = {contig: mean(bam_handle.count_coverage(contig=contig)) for contig in contig_list}
-		bam_handle.close()
-		coverage_df = pandas.DataFrame.from_dict(d, orient='index', columns=['coverage'])
-		coverage_df.to_csv(os.path.join(args.output, "coverage.csv"))
-		logger.info("Processing of mapping file finished")
-
 	'''Count kmers'''
 	if args.task == "tetra" or args.task == "all":
-		try:
-			if args.kmers_data and os.path.isfile(args.kmers_data):
-				freqs_df = pandas.read_csv(args.kmers_data, index_col=0)
-				logger.info('Read kmer frequencies from %s.', args.kmers_data)
-			else:
+		if args.kmers_data and os.path.isfile(args.kmers_data):
+			mg_data = pandas.read_csv(args.kmers_data, index_col=0)
+			logger.info('Read k-mer frequencies from %s.', args.kmers_data)
+		else:
+			try:
 				logger.info("Counting kmers")
-				freqs_df = kmer_freq_table(args.assembly)
+				mg_data = kmer_freq_table(args.assembly, args.k_len)
 				args.kmers_data = os.path.join(args.output, "kmers.csv")
-				freqs_df.to_csv(args.kmers_data)
-				logger.info('Kmer frequencies written to %s.', args.kmers_data)
+				mg_data.to_csv(args.kmers_data)
+				logger.info('Wrote k-mer frequencies to %s.', args.kmers_data)
+			except Exception as e:
+				logger.error("Error during kmer frequency calculation.")
+				raise e
 
-		except Exception as e:
-			logger.error("Error during kmer frequency calculation.")
-			raise e
+	'''Map reads with minimap2'''
+	if args.task == "map" or (args.task == 'all' and (args.pe_1 or args.single_end)):
+		mapping_sam_file = map_reads(args)
 
-	if args.task == "tsne" or args.task == "all":
+		logger.info("Converting mapping file")
+		mapping_bam_file = os.path.join(args.output, 'mapping.bam')
+		with open(mapping_bam_file, 'wb') as h:
+			h.write(pysam.view('-@', str(args.threads), '-u', '-F', '4', mapping_sam_file))
+		os.remove(mapping_sam_file)
+
+		logger.info("Sorting mapping file")
+		sorted_mapping_bam_file = os.path.join(args.output, 'mapping.sorted.bam')
+		pysam.sort('-@', str(args.threads), '-o', sorted_mapping_bam_file, mapping_bam_file)
+		os.remove(mapping_bam_file)
+
+		logger.info("Indexing mapping file")
+		pysam.samtools.index(sorted_mapping_bam_file)
+
+		logger.info("Extracting coverage")
+		cov_data = extract_coverage(sorted_mapping_bam_file, args.assembly)
+		cov_data.to_csv(os.path.join(args.output, "coverage.csv"))
+		mg_data = mg_data.join(cov_data)
+		logger.info("Processing of mapping file finished")
+
+	'''Cluster data with HDBSCAN'''
+	if args.task == "clustering" or args.task == "all":
+		'''!Remove excess read from disk!'''
 		if args.kmers_data and os.path.isfile(args.kmers_data):
 			freqs_df = pandas.read_csv(args.kmers_data, index_col=0)
-			logger.info('Read kmer frequencies from %s.', args.kmers_data)
+			logger.info('Read k-mer frequencies from %s.', args.kmers_data)
 		else:
 			logger.error("File with k-mers not found")
 			raise FileNotFoundError(args.kmers_data)
 
-		try:
-			freqs_df.join(coverage_df, how='inner')
-		except Exception as e:
-			logger.debug("Coverage missing, skipping.")
-
-		logger.info('tSNE analysis started.')
-		tsne_pca = TSNE(init='pca', perplexity=args.perplexity).fit_transform(freqs_df.iloc[:, 1:])
-		logger.info('tSNE analysis complete.')
+		logger.info('tSNE data reduction.')
+		tsne_pca = TSNE(init='pca', perplexity=args.perplexity).fit_transform(mg_data.iloc[:, 1:])
 		dfTSNE = pandas.DataFrame.join(
-			pandas.DataFrame(tsne_pca, columns=['tsne1', 'tsne2'], index=freqs_df.index),
-			freqs_df['length']
+			pandas.DataFrame(tsne_pca, columns=['tsne1', 'tsne2'], index=mg_data.index),
+			mg_data['length']
 		)
 
-		logger.info('HDBSCAN analysis started.')
+		logger.info('HDBSCAN data clustering.')
 		clusterer = hdbscan.HDBSCAN(min_cluster_size=25)
 		cluster_labels = clusterer.fit_predict(dfTSNE[['tsne1', 'tsne2']])
-		logger.info('HDBSCAN analysis completed.')
 		dfTSNE = dfTSNE.join(pandas.DataFrame(
-			cluster_labels, index=freqs_df.index, columns=['cluster']
-			))
+			cluster_labels, index=mg_data.index, columns=['cluster']
+		))
 		dfTSNE.to_csv(os.path.join(args.output, f"tetra.tsne.{args.perplexity}.csv"))
 		clusters = set(dfTSNE['cluster'])
-		logger.info("%s clusters found", len(clusters))
+		logger.info("HDBSCAN found %s clusters", len(clusters))
 
 		frag_records = list(SeqIO.parse(args.assembly, "fasta"))
 
 		for cluster in clusters:
 			dfCluster = dfTSNE[dfTSNE['cluster'] == cluster]
-			dfCluster.to_csv(os.path.join(args.output, f"bin.{cluster}.csv"))
+			'''dfCluster.to_csv(os.path.join(args.output, f"bin.{cluster}.csv"))'''
 			output_bin = os.path.join(args.output, f"bin.{cluster}.fna")
 			sequences = [x for x in frag_records if x.id in list(dfCluster.index)]
 			write_records_to_fasta(sequences, output_bin)
 
 		logger.info("%s bins had been written", len(clusters))
 
-		pal = seaborn.color_palette(palette="Set2", n_colors=len(clusters))
+		pal = seaborn.color_palette(palette="Set3", n_colors=len(clusters))
 		seaborn.relplot(
 			data=dfTSNE, x='tsne1', y='tsne2', size='length',
 			alpha=0.2, hue=dfTSNE["cluster"].astype("category"),
@@ -219,7 +232,8 @@ def main():
 		pyplot.savefig(os.path.join(args.output, f"tetra.tsne.{args.perplexity}.png"), dpi=300)
 		pyplot.savefig(os.path.join(args.output, f"tetra.tsne.{args.perplexity}.svg"))
 
-	'''Process data'''
+	'''CheckM'''
+	
 	logger.info("Analysis finished")
 
 

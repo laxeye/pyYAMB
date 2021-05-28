@@ -2,6 +2,7 @@ import logging
 import subprocess
 from Bio import SeqIO
 
+
 def run_external(cmd, keep_stdout=False, keep_stderr=True):
 	logger = logging.getLogger("main")
 	logger.debug("Running: %s", " ".join(cmd))
