@@ -8,12 +8,15 @@ import hdbscan
 import pysam
 from Bio import SeqIO
 from matplotlib import pyplot
+from numpy import mean
+from numpy import log10
 from sklearn.manifold import TSNE
 from pyyamb.cut_contigs import get_fragments
 from pyyamb.map import map_reads
+from pyyamb.map import view_mapping_file
+from pyyamb.map import sort_mapping_file
 from pyyamb.utils import write_records_to_fasta
 from pyyamb.tetra import kmer_freq_table
-from numpy import mean
 
 
 def parse_args():
@@ -40,6 +43,8 @@ def parse_args():
 		help="Perplexity parameter for tSNE.")
 	general_args.add_argument("--k-len", default=4, type=int,
 		help="Length of k-mer, default: 4.")
+	general_args.add_argument("--log-norm-coverage", action='store_true',
+		help="Perform log-normalization of coverage.")
 
 	input_args = parser.add_argument_group(title="Input files and options")
 	input_args.add_argument("-1", "--pe-1", nargs='+',
@@ -52,6 +57,8 @@ def parse_args():
 		help="Previously assembled metagenome.")
 	input_args.add_argument("--kmers-data",
 		help="Previously calculated kmer-freqs.")
+	input_args.add_argument("--mapping-file",
+		help="Sorted and indexed BAM-file.")
 
 	'''asly_args = parser.add_argument_group(title="Assembly settings")
 	asly_args.add_argument("-a", "--assembler",
@@ -75,13 +82,19 @@ def parse_args():
 			raise e
 
 	'''Check input'''
-	if args.assembly:
-		args.assembly = os.path.abspath(args.assembly)
-		if not os.path.isfile(args.assembly):
-			raise FileNotFoundError(args.assembly)
+	for x in (args.assembly, args.mapping_file, args.kmers_data):
+		if x:
+			x = os.path.abspath(x)
+			if not os.path.isfile(x):
+				logger.error("File not found: %s", x)
+				raise FileNotFoundError(x)
 
 	if args.single_end:
 		args.single_end = list(map(os.path.abspath, args.single_end))
+		for x in args.single_end:
+			if not os.path.isfile(x):
+				logger.error("File not found: %s", x)
+				raise FileNotFoundError(x)
 
 	if args.pe_1:
 		args.pe_1 = list(map(os.path.abspath, args.pe_1))
@@ -90,11 +103,17 @@ def parse_args():
 			if not os.path.isfile(f):
 				raise FileNotFoundError(f"Input file {f} not found!")
 
+	'''
+	if args.mapping_file:
+		args.mapping_file = os.path.abspath(args.mapping_file)
+		if not os.path.isfile(args.assembly):
+			raise FileNotFoundError(args.assembly)
+
 	if args.kmers_data:
 		args.kmers_data = os.path.abspath(args.kmers_data)
 		if not os.path.isfile(args.kmers_data):
 			raise FileNotFoundError(f"Input file {f} not found!")
-
+	'''
 	return args
 
 
@@ -126,6 +145,12 @@ def extract_coverage(bamfile, fasta):
 	return pandas.DataFrame.from_dict(d, orient='index', columns=['coverage'])
 
 
+def make_nice_bam(args):
+	sam_file = map_reads(args)
+	bam_file = view_mapping_file(args, sam_file, compress=False)
+	return sort_mapping_file(args, bam_file)
+
+
 def main():
 	logger = create_logger()
 	args = parse_args()
@@ -139,7 +164,7 @@ def main():
 	if args.task == "cut" or args.task == "all":
 		try:
 			fragments = get_fragments(args.assembly, args.fragment_length, args.min_length)
-			args.assembly = write_records_to_fasta(fragments, os.path.join(args.output, 'fragments.fna'))
+			args.assembly = write_records_to_fasta(fragments, os.path.join(args.output, 'fragments.fasta'))
 			logger.info("Contigs fragmented.")
 		except Exception as e:
 			logger.error("Error during contig fragmentation.")
@@ -154,6 +179,8 @@ def main():
 			try:
 				logger.info("Counting kmers")
 				mg_data = kmer_freq_table(args.assembly, args.k_len)
+				'''Z-score normalization'''
+				mg_data.iloc[:,1:] = mg_data.iloc[:,1:].apply(lambda x: (x-x.mean())/ x.std(), axis=0)
 				args.kmers_data = os.path.join(args.output, "kmers.csv")
 				mg_data.to_csv(args.kmers_data)
 				logger.info('Wrote k-mer frequencies to %s.', args.kmers_data)
@@ -163,25 +190,14 @@ def main():
 
 	'''Map reads with minimap2'''
 	if args.task == "map" or (args.task == 'all' and (args.pe_1 or args.single_end)):
-		mapping_sam_file = map_reads(args)
-
-		logger.info("Converting mapping file")
-		mapping_bam_file = os.path.join(args.output, 'mapping.bam')
-		with open(mapping_bam_file, 'wb') as h:
-			h.write(pysam.view('-@', str(args.threads), '-u', '-F', '4', mapping_sam_file))
-		os.remove(mapping_sam_file)
-
-		logger.info("Sorting mapping file")
-		sorted_mapping_bam_file = os.path.join(args.output, 'mapping.sorted.bam')
-		pysam.sort('-@', str(args.threads), '-o', sorted_mapping_bam_file, mapping_bam_file)
-		os.remove(mapping_bam_file)
-
-		logger.info("Indexing mapping file")
-		pysam.samtools.index(sorted_mapping_bam_file)
-
+		sorted_bam_file = args.mapping_file if args.mapping_file else make_nice_bam(args)
+		
 		logger.info("Extracting coverage")
-		cov_data = extract_coverage(sorted_mapping_bam_file, args.assembly)
+		cov_data = extract_coverage(sorted_bam_file, args.assembly)
 		cov_data.to_csv(os.path.join(args.output, "coverage.csv"))
+		#cov_data = cov_data.apply(lambda x: (x-x.mean())/ x.std(), axis=0)
+		if args.log_norm_coverage:
+			cov_data = cov_data.apply(log10)
 		mg_data = mg_data.join(cov_data)
 		logger.info("Processing of mapping file finished")
 
@@ -216,7 +232,6 @@ def main():
 
 		for cluster in clusters:
 			dfCluster = dfTSNE[dfTSNE['cluster'] == cluster]
-			'''dfCluster.to_csv(os.path.join(args.output, f"bin.{cluster}.csv"))'''
 			output_bin = os.path.join(args.output, f"bin.{cluster}.fna")
 			sequences = [x for x in frag_records if x.id in list(dfCluster.index)]
 			write_records_to_fasta(sequences, output_bin)
