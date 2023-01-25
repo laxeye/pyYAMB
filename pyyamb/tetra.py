@@ -4,6 +4,8 @@ import sys
 import regex
 import os
 import pandas
+import multiprocessing as mp
+from itertools import repeat
 
 
 def compl_DNA(c) -> str:
@@ -32,7 +34,7 @@ def make_kmer_list(k=4, nr=True):
 	'''Return list of kmers different (if nr) from their reverse complements'''
 	acgt = ['A', 'C', 'G', 'T']
 	kmers = acgt
-	for i in range(k - 1):
+	for _i in range(k - 1):
 		kmers = [f"{x}{y}" for x in kmers for y in acgt]
 	if nr is False:
 		return kmers
@@ -44,26 +46,29 @@ def make_kmer_list(k=4, nr=True):
 		return nr_kmers
 
 
-def kmers_freq(records, kmers):
-	'''Yield kmer frequence in FASTA file'''
+def kmers_freq_single(record, patterns, klen):
+	d = {}
+	seq_len = len(record.seq)
+	seq = str(record.seq).upper()
+	for (i, j) in patterns:
+		d[i] = len(regex.findall(j, seq, overlapped=True))
+	seq_rc = str(record.seq.reverse_complement()).upper()
+	for (i, j) in patterns:
+		d[i] = d.get(i, 0) + len(regex.findall(j, seq_rc, overlapped=True))
+	return [record.id, seq_len] + [1000 * d.get(i, 0) / (2 * (seq_len - klen)) for i, _ in patterns]
+
+
+def kmers_freq(records, kmers, num_pools=1):
 	patterns = [(i, regex.compile(i)) for i in kmers]
 	klen = len(kmers[0])
-	for record in records:
-		d = {}
-		seq_len = len(record.seq)
-		seq = str(record.seq)
-		for (i, j) in patterns:
-			d[i] = len(regex.findall(j, seq, overlapped=True))
-		seq_rc = str(record.seq.reverse_complement())
-		for (i, j) in patterns:
-			d[i] = d.get(i, 0) + len(regex.findall(j, seq_rc, overlapped=True))
-		yield [record.id, seq_len] + [1000 * d.get(i, 0) / (2 * (seq_len - klen)) for i in kmers]
+	with mp.Pool(num_pools) as p:
+		return p.starmap(kmers_freq_single, zip(records, repeat(patterns), repeat(klen)))
 
 
-def kmer_freq_table(filename, k_len=4):
+def kmer_freq_table(filename, k_len=4, num_pools=1):
 	kmer_list = make_kmer_list(k_len, nr=True)
 	return pandas.DataFrame.from_records(
-		kmers_freq(SeqIO.parse(filename, "fasta"), kmer_list),
+		kmers_freq(SeqIO.parse(filename, "fasta"), kmer_list, num_pools),
 		columns=['fragment', 'length'] + kmer_list,
 		index='fragment')
 

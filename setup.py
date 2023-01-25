@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="pyYAMB",
-    version="0.1dev",
+    version="0.1a0",
     author="Aleksei Korzhenkov",
     author_email="oscypek@ya.ru",
     description="Yet Another Metagenome Binner",
@@ -19,7 +19,6 @@ setuptools.setup(
             'pyyamb = pyyamb.pyyamb:main',
         ],
     },
-    #package_data={"zga": ["data/*"]},
     classifiers=[
         "Development Status :: 3 - Alpha",
         "Environment :: Console",
@@ -29,6 +28,16 @@ setuptools.setup(
         "Operating System :: POSIX :: Linux",
         "Topic :: Scientific/Engineering :: Bio-Informatics"
     ],
-    python_requires='>=3.6',
-    install_requires='biopython'
+    python_requires='>=3.8',
+    install_requires=[
+        'biopython',
+        'pandas',
+        'seaborn',
+        'pysam',
+        'matplotlib',
+        'numpy',
+        'scikit-learn',
+        'hdbscan',
+        'regex'
+    ]
 )
