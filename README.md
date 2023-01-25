@@ -1,1 +1,53 @@
 # pyYAMB
+
+pyYAMB is an implementation of [YAMB](https://github.com/laxeye/YAMB/) (Yet another metagenome binner) on Python (>=3.8). Originally YAMB was described in the preprint https://www.biorxiv.org/content/10.1101/521286.abstract and it's main points were use of tSNE and HDBSCAN to process tetramer frequencies and coverage depth of metagenome fragments. pyYAMB strives for parallel computing wherever possible, currently coverage depth extraction is single threaded and takes too much time.
+
+### pyYAMB data processing includes
+
+* contig filtering and fragmenting
+* read mapping with minimap2
+* mapping files processin and coverage depth extraction with pysam
+* k-mer (dy default tetramer) frequency calculation
+* data diminsions reduction with tSNE
+* data clustering with HDBSCAN
+* writing bins to FASTA
+
+#### Features in *far* future
+
+* read processing
+* metagenome assembly
+* bin QC
+
+
+## How to start
+
+**Warning!** *pyYAMB now is in alpha-testing and may be unstable, use it at Your own risk.*
+
+### Instalation
+
+pyYAMB will be available in PyPI soon and in conda some time later. Until then you need to clone the repository and run `python setup.py install`. It installs pyYAMB and python libraries. Problems may appear with *hdbscan* module and *cython*. Just reinstall *hdbscan* using `pip install hdbscan` and try again `python setup.py install`.
+
+### Usage
+
+pyYAMB entry point is the all-in-one command `pyyamb`. pyYAMB has two dozens of arguments, their description is available after running `pyyamb -h`
+
+You may start from metagenome assembly and processed (quality trimmed etc.) reads, e.g.:
+
+`pyyamb -1 Sample_1.fastq.gz -2 Sample_2.fastq.gz -i assembly -o results/will/be/here`
+
+## Results and benchmarks
+
+pyYAMB will be tested on CAMI dataset soon. YAMB showed quality compared with [CONCOCT](https://github.com/BinPro/CONCOCT) binner (see the [preprint](https://www.biorxiv.org/content/10.1101/521286.abstract) for details).
+
+
+## References
+
+Van Der Maaten, L. (2014). Accelerating t-SNE using tree-based algorithms. The Journal of Machine Learning Research, 15(1), 3221-3245.
+
+Campello, R. J., Moulavi, D., & Sander, J. (2013, April). Density-based clustering based on hierarchical density estimates. In Pacific-Asia conference on knowledge discovery and data mining (pp. 160-172). Springer, Berlin, Heidelberg.
+
+Li, H. (2018). Minimap2: pairwise alignment for nucleotide sequences. Bioinformatics, 34:3094-3100. https://dx.doi.org/10.1093/bioinformatics/bty191
+
+Parks, D. H., Imelfort, M., Skennerton, C. T., Hugenholtz, P., & Tyson, G. W. (2015). CheckM: assessing the quality of microbial genomes recovered from isolates, single cells, and metagenomes. Genome research, 25(7), 1043-1055. https://dx.doi.org/10.1101/gr.186072.114
+
+Cock, P. J., Antao, T., Chang, J. T., Chapman, B. A., Cox, C. J., Dalke, A., ... & De Hoon, M. J. (2009). Biopython: freely available Python tools for computational molecular biology and bioinformatics. Bioinformatics, 25(11), 1422-1423. https://doi.org/10.1093/bioinformatics/btp163
