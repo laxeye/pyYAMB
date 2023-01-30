@@ -25,7 +25,23 @@ pyYAMB is an implementation of [YAMB](https://github.com/laxeye/YAMB/) (Yet anot
 
 ### Instalation
 
-pyYAMB will be available in PyPI soon and in conda some time later. Until then you need to clone the repository and run `python setup.py install`. It installs pyYAMB and python libraries. Problems may appear with *hdbscan* module and *cython*. Just reinstall *hdbscan* using `pip install hdbscan` and try again `python setup.py install`.
+pyYAMB is available at PyPI and may be installed with:
+
+`pip install pyYAMB`
+
+Another way is to clone the repository
+
+`git clone https://github.com/laxeye/pyYAMB.git` or `gh repo clone laxeye/pyYAMB`
+
+and run
+
+`python setup.py install`
+
+It installs pyYAMB and python libraries. Problems may appear with *hdbscan* module and *cython*. Just reinstall *hdbscan* using `pip install hdbscan` and try again `python setup.py install`.
+
+Also you need to install dependencies: minimap2. Samtools should be installed automatically during pysam installation, otherwise please install it (e.g. using conda). 
+
+Conda package will be available soon.
 
 ### Usage
 
