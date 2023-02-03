@@ -1,7 +1,7 @@
 # pyYAMB
 
-![Python versions](https://img.shields.io/pypi/pyversions/pyyamb.svg)
-![PyPI version](https://img.shields.io/pypi/v/pyyamb.svg)
+[![Python versions](https://img.shields.io/pypi/pyversions/pyyamb.svg)](https://pypi.org/project/pyYAMB/)
+[![PyPI version](https://img.shields.io/pypi/v/pyyamb.svg)](https://pypi.org/project/pyYAMB/)
 
 pyYAMB is an implementation of [YAMB](https://github.com/laxeye/YAMB/) (Yet another metagenome binner) on Python (>=3.8). Originally YAMB was described in the preprint https://www.biorxiv.org/content/10.1101/521286.abstract and it's main point is the use of tSNE and HDBSCAN to process tetramer frequencies and coverage depth of metagenome fragments. pyYAMB strives for parallel computing wherever possible, currently coverage depth extraction is single threaded and takes the most time.
 

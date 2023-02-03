@@ -16,23 +16,22 @@ from pyyamb.map import view_mapping_file
 from pyyamb.map import sort_mapping_file
 from pyyamb.utils import write_records_to_fasta
 from pyyamb.tetra import kmer_freq_table
+from pyyamb import __version__
 
 
 def parse_args():
 	logger = logging.getLogger()
 	parser = argparse.ArgumentParser(prog="pyYAMB",
-		description="pyYAMB metagenome binner",
+		description=f"pyYAMB metagenome binner ver. {__version__}",
 		formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
 	general_args = parser.add_argument_group(title="General options", description="")
 	general_args.add_argument("--task", required=True,
-		choices=["all", "cut", "tetra", "clustering", "map", "make_bins"],
+		choices=["all", "cut", "tetra", "map", "clustering", "make_bins"],
 		help="Task of pipeline: cut (discard short contigs and cut longer), "
 		+ "map (map reads or process mapping file)")
 	general_args.add_argument("-o", "--output", type=str, required=True,
 		help="Output directory")
-	'''general_args.add_argument("--mapper", help="Mapping software, currently minimap2 only",
-		choices=["minimap2"], default="minimap2")'''
 	general_args.add_argument("--min-length", default=1000, type=int,
 		help="Minimum contig length")
 	general_args.add_argument("--fragment-length", default=10000, type=int,
