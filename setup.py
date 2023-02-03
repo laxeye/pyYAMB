@@ -5,7 +5,7 @@ with open("README.md", "r") as fh:
 
 setuptools.setup(
     name="pyYAMB",
-    version="0.1a0",
+    version=pyyamb.__version__,
     author="Aleksei Korzhenkov",
     author_email="oscypek@ya.ru",
     description="Yet Another Metagenome Binner",
@@ -20,7 +20,7 @@ setuptools.setup(
         ],
     },
     classifiers=[
-        "Development Status :: 3 - Alpha",
+        "Development Status :: 4 - Beta",
         "Environment :: Console",
         "Intended Audience :: Science/Research",
         "Programming Language :: Python :: 3",

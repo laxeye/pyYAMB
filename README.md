@@ -1,33 +1,39 @@
 # pyYAMB
 
-pyYAMB is an implementation of [YAMB](https://github.com/laxeye/YAMB/) (Yet another metagenome binner) on Python (>=3.8). Originally YAMB was described in the preprint https://www.biorxiv.org/content/10.1101/521286.abstract and it's main points were use of tSNE and HDBSCAN to process tetramer frequencies and coverage depth of metagenome fragments. pyYAMB strives for parallel computing wherever possible, currently coverage depth extraction is single threaded and takes too much time.
+![Python versions](https://img.shields.io/pypi/pyversions/pyyamb.svg)
+![PyPI version](https://img.shields.io/pypi/v/pyyamb.svg)
+
+pyYAMB is an implementation of [YAMB](https://github.com/laxeye/YAMB/) (Yet another metagenome binner) on Python (>=3.8). Originally YAMB was described in the preprint https://www.biorxiv.org/content/10.1101/521286.abstract and it's main point is the use of tSNE and HDBSCAN to process tetramer frequencies and coverage depth of metagenome fragments. pyYAMB strives for parallel computing wherever possible, currently coverage depth extraction is single threaded and takes the most time.
 
 ### pyYAMB data processing includes
 
-* contig filtering and fragmenting
+* contig filtering and fragmentation
 * read mapping with minimap2
-* mapping files processin and coverage depth extraction with pysam
-* k-mer (dy default tetramer) frequency calculation
-* data diminsions reduction with tSNE
+* mapping files processing and coverage depth extraction with pysam
+* k-mer (by default tetramer) frequency calculation
+* data dimensions reduction with tSNE
 * data clustering with HDBSCAN
 * writing bins to FASTA
 
-#### Features in *far* future
+#### Possible features in *far* future
 
 * read processing
 * metagenome assembly
 * bin QC
 
-
 ## How to start
 
 **Warning!** *pyYAMB now is in alpha-testing and may be unstable, use it at Your own risk.*
 
-### Instalation
+### Installation
+
+#### PyPI
 
 pyYAMB is available at PyPI and may be installed with:
 
 `pip install pyYAMB`
+
+#### GitHub
 
 Another way is to clone the repository
 
@@ -39,6 +45,8 @@ and run
 
 It installs pyYAMB and python libraries. Problems may appear with *hdbscan* module and *cython*. Just reinstall *hdbscan* using `pip install hdbscan` and try again `python setup.py install`.
 
+#### Dependencies
+
 Also you need to install dependencies: minimap2. Samtools should be installed automatically during pysam installation, otherwise please install it (e.g. using conda). 
 
 Conda package will be available soon.
@@ -49,7 +57,9 @@ pyYAMB entry point is the all-in-one command `pyyamb`. pyYAMB has two dozens of 
 
 You may start from metagenome assembly and processed (quality trimmed etc.) reads, e.g.:
 
-`pyyamb -1 Sample_1.fastq.gz -2 Sample_2.fastq.gz -i assembly -o results/will/be/here`
+`pyyamb --task all -1 Sample_1.R1.fastq.gz Sample_2.R1.fastq.gz -2 Sample_1.R2.fastq.gz Sample_2.R2.fastq.gz -i assembly.fasta -o results/will/be/here --threads 8`
+
+After completion bins could be found in *bins* subfolder in output folder. "-1" bin collects unbinned sequences.
 
 ## Results and benchmarks
 

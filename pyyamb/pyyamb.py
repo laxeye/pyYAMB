@@ -47,6 +47,8 @@ def parse_args():
 		help="Number of CPU threads to use (where possible).")
 	general_args.add_argument("-m", "--memory-limit", type=int, default=16,
 		help="Memory limit in GB.")
+	general_args.add_argument("-d", "--debug", action='store_true',
+		help="Print debug messages.")
 
 	input_args = parser.add_argument_group(title="Input files and options")
 	input_args.add_argument("-1", "--pe-1", nargs='*',
@@ -63,15 +65,6 @@ def parse_args():
 		help="Sorted and indexed BAM-file(s). Space-separated if multiple.")
 	input_args.add_argument("--coverage-data",
 		help="Coverage depth of fragments in comma-separated file.")
-
-	'''asly_args = parser.add_argument_group(title="Assembly settings")
-	asly_args.add_argument("-a", "--assembler",
-		default="spades", choices=["spades", "megahit"],
-		help="Assembler: 'spades' or 'megahit'.")
-	asly_args.add_argument("--spades-correction", action="store_true",
-		help="Perform short read correction by SPAdes (not recommended).")
-	asly_args.add_argument("--spades-k-list",
-		help="SPAdes: List of kmers, comma-separated even numbers e.g. '21,33,55,77'")'''
 
 	args = parser.parse_args()
 
@@ -146,20 +139,18 @@ def extract_coverage(bamfile, fasta):
 
 
 def make_nice_bam(args):
-	sam_file = map_reads(args)
-	bam_file = view_mapping_file(args, sam_file, compress=False)
-	return sort_mapping_file(args, bam_file)
+	sam_files = map_reads(args)
+	bam_files = [view_mapping_file(args, sam_file, compress=False) for sam_file in sam_files]
+	return [sort_mapping_file(args, bam_file) for bam_file in bam_files]
 
 
 def main():
 	logger = create_logger()
 	args = parse_args()
+	if not args.debug:
+		logger.setLevel(logging.INFO)
 	logger.info("Analysis started")
 	mg_data = pandas.DataFrame()
-
-	'''Process reads'''
-
-	'''Assemble with spades or megahit'''
 
 	'''Cut contigs'''
 	if args.task == "cut" or args.task == "all":
@@ -185,12 +176,12 @@ def main():
 
 	'''Map reads with minimap2'''
 	if args.task == "map" or (args.task == 'all' and (args.pe_1 or args.single_end)):
-		sorted_bam_files = args.mapping_file if args.mapping_file else [make_nice_bam(args)]
+		sorted_bam_files = args.mapping_file if args.mapping_file else make_nice_bam(args)
 		logger.info("Extracting coverage")
 		cov_data = extract_coverage(sorted_bam_files[0], args.assembly)
 		if len(sorted_bam_files) > 1:
 			for m_file in sorted_bam_files[1:]:
-				cov_data = cov_data.merge(extract_coverage(m_file, args.assembly), how='outer')
+				cov_data = cov_data.merge(extract_coverage(m_file, args.assembly), on="fragment", how='outer')
 		cov_data.to_csv(os.path.join(args.output, "coverage.csv"))
 		logger.info("Processing of mapping file finished")
 
@@ -213,10 +204,11 @@ def main():
 			raise FileNotFoundError(args.coverage_data)
 
 	if args.task == "clustering" or args.task == "all":
-		'''Merge data and make Z-score normalization'''
+		'''Merge data, produce Z-scores and dump to file'''
 		mg_data = mg_data.merge(cov_data, how='outer', on='fragment')
 		mg_data.iloc[:, 2:] = mg_data.iloc[:, 2:].apply(
 			lambda x: (x - x.mean()) / x.std(), axis=0)
+		mg_data.to_csv(os.path.join(args.output, "z-scored_data.csv"), index=False)
 
 		logger.info('tSNE data reduction.')
 		tsne_pca = TSNE(init='pca', perplexity=args.perplexity).fit_transform(mg_data.iloc[:, 2:])
@@ -239,7 +231,7 @@ def main():
 		pal = seaborn.color_palette(palette="Set3", n_colors=len(clusters))
 		seaborn.relplot(
 			data=dfTSNE, x='tsne1', y='tsne2', size='length',
-			alpha=0.2, hue=dfTSNE["cluster"].astype("category"),
+			alpha=0.1, hue=dfTSNE["cluster"].astype("category"),
 			palette=pal
 		)
 		pyplot.savefig(os.path.join(args.output, f"pyyamb.perplexity_{args.perplexity}.png"), dpi=300)
@@ -250,9 +242,11 @@ def main():
 		clusters = set(dfTSNE['cluster'])
 		logger.info("Writing %s bins", len(clusters))
 		frag_records = list(SeqIO.parse(args.assembly, "fasta"))
+		bin_dir = os.path.join(args.output, "bins")
+		os.makedirs(bin_dir)
 		for cluster in clusters:
 			frag_names = list(dfTSNE[dfTSNE['cluster'] == cluster]['fragment'])
-			output_bin = os.path.join(args.output, f"pyyamb.bin.{cluster}.fna")
+			output_bin = os.path.join(bin_dir, f"pyyamb.bin.{cluster}.fna")
 			records = (x for x in frag_records if x.id in frag_names)
 			write_records_to_fasta(records, output_bin, glue=True)
 
