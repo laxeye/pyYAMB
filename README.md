@@ -2,6 +2,7 @@
 
 [![Python versions](https://img.shields.io/pypi/pyversions/pyyamb.svg)](https://pypi.org/project/pyYAMB/)
 [![PyPI version](https://img.shields.io/pypi/v/pyyamb.svg)](https://pypi.org/project/pyYAMB/)
+[![Anaconda version](https://anaconda.org/laxeye/pyyamb/badges/version.svg)](https://anaconda.org/laxeye/pyyamb/)
 
 pyYAMB is an implementation of [YAMB](https://github.com/laxeye/YAMB/) (Yet another metagenome binner) on Python (>=3.8). Originally YAMB was described in the preprint https://www.biorxiv.org/content/10.1101/521286.abstract and it's main point is the use of tSNE and HDBSCAN to process tetramer frequencies and coverage depth of metagenome fragments. pyYAMB strives for parallel computing wherever possible, currently coverage depth extraction is single threaded and takes the most time.
 
@@ -27,15 +28,23 @@ pyYAMB is an implementation of [YAMB](https://github.com/laxeye/YAMB/) (Yet anot
 
 ### Installation
 
+#### Conda
+
+pyYAMB is available at Anaconda and may be installed with all dependencies:
+
+`conda install -c laxeye pyyamb`
+
 #### PyPI
 
 pyYAMB is available at PyPI and may be installed with:
 
 `pip install pyYAMB`
 
+Also yo need to install dependencies
+
 #### GitHub
 
-Another way is to clone the repository
+Another way (*not recommended*) is to clone the repository
 
 `git clone https://github.com/laxeye/pyYAMB.git` or `gh repo clone laxeye/pyYAMB`
 
@@ -47,9 +56,9 @@ It installs pyYAMB and python libraries. Problems may appear with *hdbscan* modu
 
 #### Dependencies
 
-Also you need to install dependencies: minimap2. Samtools should be installed automatically during pysam installation, otherwise please install it (e.g. using conda). 
+If you installed pyYAMB from PyPI or GitHub, you need to install dependencies: minimap2 and samtools (e.g. using conda).
 
-Conda package will be available soon.
+`conda install -c bioconda minimap2 "samtools>=1.10"`
 
 ### Usage
 
