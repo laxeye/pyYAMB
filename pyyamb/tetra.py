@@ -69,8 +69,7 @@ def kmer_freq_table(filename, k_len=4, num_pools=1):
 	kmer_list = make_kmer_list(k_len, nr=True)
 	return pandas.DataFrame.from_records(
 		kmers_freq(SeqIO.parse(filename, "fasta"), kmer_list, num_pools),
-		columns=['fragment', 'length'] + kmer_list,
-		index='fragment')
+		columns=['fragment', 'length'] + kmer_list)
 
 
 if __name__ == '__main__':

@@ -29,25 +29,29 @@ def parse_args():
 	general_args.add_argument("--task", required=True,
 		choices=["all", "cut", "tetra", "map", "clustering", "make_bins"],
 		help="Task of pipeline: cut (discard short contigs and cut longer), "
-		+ "map (map reads or process mapping file)")
+		+ "map (map reads or process mapping file).")
 	general_args.add_argument("-o", "--output", type=str, required=True,
-		help="Output directory")
+		help="Output directory.")
 	general_args.add_argument("--min-length", default=1000, type=int,
-		help="Minimum contig length")
+		help="Minimum contig length.")
 	general_args.add_argument("--fragment-length", default=10000, type=int,
-		help="Target length of contig fragments")
+		help="Target length of contig fragments.")
 	general_args.add_argument("--perplexity", default=50, type=int,
 		help="Perplexity parameter for tSNE.")
+	general_args.add_argument("--min-cluster-size", "--mcs", default=30, type=int,
+		help="HDBSCAN min_cluster_size parameter.")
+	general_args.add_argument("--min-samples", "--ms", default=15, type=int,
+		help="HDBSCAN min_samples parameter.")
 	general_args.add_argument("--k-len", default=4, type=int,
 		help="Length of k-mer to calculate their frequencies.")
-	general_args.add_argument("--log-norm-coverage", action='store_true',
-		help="Perform log-normalization of coverage.")
 	general_args.add_argument("-t", "--threads", type=int, default=1,
 		help="Number of CPU threads to use (where possible).")
 	general_args.add_argument("-m", "--memory-limit", type=int, default=16,
 		help="Memory limit in GB.")
 	general_args.add_argument("-d", "--debug", action='store_true',
 		help="Print debug messages.")
+	general_args.add_argument("--force", action='store_true',
+		help="Overwrite content of output directory.")
 
 	input_args = parser.add_argument_group(title="Input files and options")
 	input_args.add_argument("-1", "--pe-1", nargs='*',
@@ -64,6 +68,8 @@ def parse_args():
 		help="Sorted and indexed BAM-file(s). Space-separated if multiple.")
 	input_args.add_argument("--coverage-data",
 		help="Coverage depth of fragments in comma-separated file.")
+	input_args.add_argument("--clustered-data",
+		help="Previously clustered data, only for \"make_bins\" task.")
 
 	args = parser.parse_args()
 
@@ -71,7 +77,7 @@ def parse_args():
 
 	if not os.path.isdir(args.output):
 		try:
-			os.makedirs(args.output)
+			os.makedirs(args.output, exist_ok=args.force)
 		except Exception as e:
 			logger.error("Failed to create %s", args.output)
 			raise e
@@ -138,6 +144,7 @@ def extract_coverage(bamfile, fasta):
 
 
 def make_nice_bam(args):
+	'''Map reads and produce a sorted BAM file(s)'''
 	sam_files = map_reads(args)
 	bam_files = [view_mapping_file(args, sam_file, compress=False) for sam_file in sam_files]
 	return [sort_mapping_file(args, bam_file) for bam_file in bam_files]
@@ -165,16 +172,16 @@ def main():
 	if args.task == "tetra" or args.task == "all":
 		try:
 			logger.info("Counting kmers")
-			mg_data = kmer_freq_table(args.assembly, args.k_len, args.threads)
-			kmers_data = os.path.join(args.output, "kmers.csv")
-			mg_data.to_csv(kmers_data)
-			logger.info('Wrote k-mer frequencies to %s.', kmers_data)
+			k_data = kmer_freq_table(args.assembly, args.k_len, args.threads)
+			kmers_data_file = os.path.join(args.output, "kmers.csv")
+			k_data.to_csv(kmers_data_file)
+			logger.info('Wrote k-mer frequencies to %s.', kmers_data_file)
 		except Exception as e:
 			logger.error("Error during kmer frequency calculation.")
 			raise e
 
 	'''Map reads with minimap2'''
-	if args.task == "map" or (args.task == 'all' and (args.pe_1 or args.single_end)):
+	if args.task == "map" or (args.task == 'all' and (args.pe_1 or args.single_end or args.mapping_file)):
 		sorted_bam_files = args.mapping_file if args.mapping_file else make_nice_bam(args)
 		logger.info("Extracting coverage")
 		cov_data = extract_coverage(sorted_bam_files[0], args.assembly)
@@ -188,7 +195,7 @@ def main():
 	if args.task == "clustering":
 		'''Read k-mers from disk. Frequencies, not z-scores'''
 		if args.kmers_data and os.path.isfile(args.kmers_data):
-			mg_data = pandas.read_csv(args.kmers_data, index_col=0)
+			k_data = pandas.read_csv(args.kmers_data, index_col=0)
 			logger.info('Read k-mer frequencies from %s.', args.kmers_data)
 		else:
 			logger.error("File with k-mers not found")
@@ -196,7 +203,7 @@ def main():
 
 		'''Read coverage depth of fragments from disk. Not z-scores'''
 		if args.coverage_data and os.path.isfile(args.coverage_data):
-			cov_data = pandas.read_csv(args.coverage_data, index_col=0)
+			cov_data = pandas.read_csv(args.coverage_data)
 			logger.info('Read fragment coverage depth from %s.', args.coverage_data)
 		else:
 			logger.error("File fragment coverage depth not found")
@@ -204,25 +211,32 @@ def main():
 
 	if args.task == "clustering" or args.task == "all":
 		'''Merge data, produce Z-scores and dump to file'''
-		mg_data = mg_data.merge(cov_data, how='outer', on='fragment')
-		mg_data.iloc[:, 2:] = mg_data.iloc[:, 2:].apply(
-			lambda x: (x - x.mean()) / x.std(), axis=0)
-		mg_data.to_csv(os.path.join(args.output, "z-scored_data.csv"), index=False)
+		mg_data = k_data.merge(cov_data, how='left', on='fragment')
+		z_scores = mg_data.iloc[:, :2].join(
+			mg_data.iloc[:, 2:].apply(
+				lambda x: (x - x.mean()) / x.std(), axis=0
+			)
+		)
+		z_scores.to_csv(os.path.join(args.output, "z-scored_data.csv"))
 
 		logger.info('tSNE data reduction.')
-		tsne_pca = TSNE(init='pca', perplexity=args.perplexity).fit_transform(mg_data.iloc[:, 2:])
+		tsne_pca = TSNE(init='pca', perplexity=args.perplexity).fit_transform(z_scores.iloc[:, 2:])
 		dfTSNE = pandas.DataFrame.join(
-			pandas.DataFrame(tsne_pca, columns=['tsne1', 'tsne2'], index=mg_data.index),
-			mg_data['length']
+			pandas.DataFrame(tsne_pca, columns=['tsne1', 'tsne2'], index=k_data.index),
+			z_scores[['fragment','length']]
 		)
 
 		logger.info('HDBSCAN data clustering.')
-		clusterer = hdbscan.HDBSCAN(min_cluster_size=25)
+		clusterer = hdbscan.HDBSCAN(
+			min_cluster_size=args.min_cluster_size,
+			min_samples=args.min_samples
+		)
 		cluster_labels = clusterer.fit_predict(dfTSNE[['tsne1', 'tsne2']])
-		dfTSNE = dfTSNE.join(pandas.DataFrame(
-			cluster_labels, index=mg_data.index, columns=['cluster']
-		))
-		dfTSNE.to_csv(os.path.join(args.output, f"pyyamb.perplexity_{args.perplexity}.csv"))
+		dfTSNE = dfTSNE.join(
+			pandas.DataFrame(cluster_labels, columns=['cluster'])
+		)
+		fname_prefix = f"pyyamb.tp_{args.perplexity}_mcl_{args.min_cluster_size}_ms_{args.min_samples}"
+		dfTSNE.to_csv(os.path.join(args.output, f"{fname_prefix}.csv"))
 		clusters = set(dfTSNE['cluster'])
 		logger.info("HDBSCAN found %s clusters", len(clusters))
 
@@ -233,16 +247,17 @@ def main():
 			alpha=0.1, hue=dfTSNE["cluster"].astype("category"),
 			palette=pal
 		)
-		pyplot.savefig(os.path.join(args.output, f"pyyamb.perplexity_{args.perplexity}.png"), dpi=300)
-		pyplot.savefig(os.path.join(args.output, f"pyyamb.perplexity_{args.perplexity}.svg"))
+		pyplot.savefig(os.path.join(args.output, f"{fname_prefix}.png"), dpi=300)
+		pyplot.savefig(os.path.join(args.output, f"{fname_prefix}.svg"))
 
 	if args.task in ["make_bins", "clustering", "all"]:
-		dfTSNE = pandas.read_csv(os.path.join(args.output, f"pyyamb.perplexity_{args.perplexity}.csv"))
+		if args.task == "make_bins":
+			dfTSNE = pandas.read_csv(os.path.join(args.clustered_data))
 		clusters = set(dfTSNE['cluster'])
 		logger.info("Writing %s bins", len(clusters))
 		frag_records = list(SeqIO.parse(args.assembly, "fasta"))
 		bin_dir = os.path.join(args.output, "bins")
-		os.makedirs(bin_dir)
+		os.makedirs(bin_dir, exist_ok=args.force)
 		for cluster in clusters:
 			frag_names = list(dfTSNE[dfTSNE['cluster'] == cluster]['fragment'])
 			output_bin = os.path.join(bin_dir, f"pyyamb.bin.{cluster}.fna")
