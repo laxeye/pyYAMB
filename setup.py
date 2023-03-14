@@ -39,6 +39,7 @@ setuptools.setup(
         'numpy',
         'scikit-learn',
         'hdbscan',
+        'pycoverm',
         'regex'
     ]
 )

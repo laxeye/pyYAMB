@@ -6,6 +6,7 @@ import pandas
 import seaborn
 import hdbscan
 import pysam
+import pycoverm
 from Bio import SeqIO
 from matplotlib import pyplot
 from numpy import mean
@@ -21,7 +22,7 @@ from pyyamb import __version__
 
 def parse_args():
 	logger = logging.getLogger()
-	parser = argparse.ArgumentParser(prog="pyYAMB",
+	parser = argparse.ArgumentParser(prog="pyyamb",
 		description=f"pyYAMB metagenome binner ver. {__version__}",
 		formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
@@ -126,23 +127,6 @@ def create_logger():
 	return logger
 
 
-def extract_coverage(bamfile, fasta):
-	'''Extract coverage from sorted and indexed BAM-file for every contig in FASTA-file
-
-	Args:
-		bamfile (path): Path to sorted and indexed mapping file in BAM format
-		fasta (path): Path to metagenome fragments in FASTA format
-
-	Returns:
-		pandas.DataFrame
-	'''
-	sample_name, _ = os.path.splitext(os.path.basename(bamfile))
-	contig_list = [record.id for record in SeqIO.parse(fasta, 'fasta')]
-	with pysam.AlignmentFile(bamfile) as bam_handle:
-		covs = [mean(bam_handle.count_coverage(contig=contig)) for contig in contig_list]
-	return pandas.DataFrame.from_records(zip(contig_list, covs), index='fragment', columns=['fragment', sample_name])
-
-
 def make_nice_bam(args):
 	'''Map reads and produce a sorted BAM file(s)'''
 	sam_files = map_reads(args)
@@ -184,10 +168,12 @@ def main():
 	if args.task == "map" or (args.task == 'all' and (args.pe_1 or args.single_end or args.mapping_file)):
 		sorted_bam_files = args.mapping_file if args.mapping_file else make_nice_bam(args)
 		logger.info("Extracting coverage")
-		cov_data = extract_coverage(sorted_bam_files[0], args.assembly)
-		if len(sorted_bam_files) > 1:
-			for m_file in sorted_bam_files[1:]:
-				cov_data = cov_data.merge(extract_coverage(m_file, args.assembly), on="fragment", how='outer')
+		samples = [os.path.splitext(os.path.basename(x))[0] for x in sorted_bam_files]
+		contigs, mean_covs = pycoverm.get_coverages_from_bam(
+			sorted_bam_files, contig_end_exclusion=75, min_identity=0.97,
+			trim_lower=0.0, trim_upper=0.0, threads=args.threads)
+		cov_data = pandas.DataFrame(mean_covs, index=contigs, columns=samples)
+		cov_data.index.rename('fragment', inplace=True)
 		cov_data.to_csv(os.path.join(args.output, "coverage.csv"))
 		logger.info("Processing of mapping file finished")
 
