@@ -1,0 +1,52 @@
+{% set name = "pyYAMB" %}
+{% set version = "0.1.2" %}
+
+package:
+  name: "{{ name|lower }}"
+  version: "{{ version }}"
+
+source:
+  url: "https://pypi.io/packages/source/{{ name[0] }}/{{ name }}/{{ name }}-{{ version }}.tar.gz"
+  sha256: a2b63d061988dbb94edc9e0a1519a1c5c2fc599ba034e8efabe95d62af48917e
+
+build:
+  noarch: python
+  number: 1
+  entry_points:
+    - pyyamb = pyyamb.pyyamb:main
+  script: "{{ PYTHON }} -m pip install . -vv"
+
+requirements:
+  host:
+    - python >=3.8
+    - pip
+  run:
+    - python  >=3.8
+    - biopython
+    - samtools >=1.9
+    - minimap2
+    - pysam
+    - pandas
+    - seaborn
+    - matplotlib
+    - numpy
+    - scikit-learn
+    - hdbscan
+    - regex
+
+test:
+  imports:
+    - pyyamb
+  commands:
+    - pyyamb --help
+
+about:
+  home: "https://github.com/laxeye/pyyamb"
+  license: BSD
+  license_family: BSD
+  summary: "pyYAMB metagenome binner"
+  dev_url: https://github.com/laxeye/pyyamb/
+
+extra:
+  recipe-maintainers:
+    - laxeye

@@ -4,17 +4,18 @@
 [![PyPI version](https://img.shields.io/pypi/v/pyyamb.svg)](https://pypi.org/project/pyYAMB/)
 [![Anaconda version](https://anaconda.org/laxeye/pyyamb/badges/version.svg)](https://anaconda.org/laxeye/pyyamb/)
 
-pyYAMB is an implementation of [YAMB](https://github.com/laxeye/YAMB/) (Yet another metagenome binner) on Python (>=3.8). Originally YAMB was described in the preprint https://www.biorxiv.org/content/10.1101/521286.abstract and it's main point is the use of tSNE and HDBSCAN to process tetramer frequencies and coverage depth of metagenome fragments. pyYAMB strives for parallel computing wherever possible, currently coverage depth extraction is single threaded and takes the most time.
+pyYAMB is an implementation of [YAMB](https://github.com/laxeye/YAMB/) (Yet another metagenome binner) on Python (>=3.8). Originally YAMB was described in the preprint https://www.biorxiv.org/content/10.1101/521286.abstract and it's main point is the use of tSNE and HDBSCAN to process tetramer frequencies and coverage depth of metagenome fragments. pyYAMB strives for parallel computing wherever possible.
 
 ### pyYAMB data processing includes
 
 * contig filtering and fragmentation
-* read mapping with minimap2
-* mapping files processing and coverage depth extraction with pysam
+* read mapping with [minimap2](https://github.com/lh3/minimap2)
+* mapping files processing with pysam and coverage depth extraction with [pycoverm](https://github.com/apcamargo/pycoverm)
 * k-mer (by default tetramer) frequency calculation
 * data dimensions reduction with tSNE
 * data clustering with HDBSCAN
 * writing bins to FASTA
+* writing plots to PNG and SVG
 
 #### Possible features in *far* future
 
@@ -23,8 +24,6 @@ pyYAMB is an implementation of [YAMB](https://github.com/laxeye/YAMB/) (Yet anot
 * bin QC
 
 ## How to start
-
-**Warning!** *pyYAMB now is in alpha-testing and may be unstable, use it at Your own risk.*
 
 ### Installation
 
@@ -40,7 +39,7 @@ pyYAMB is available at PyPI and may be installed with:
 
 `pip install pyYAMB`
 
-Also yo need to install dependencies
+Also yo need to install dependencies (see below).
 
 #### GitHub
 
@@ -58,7 +57,7 @@ It installs pyYAMB and python libraries. Problems may appear with *hdbscan* modu
 
 If you installed pyYAMB from PyPI or GitHub, you need to install dependencies: minimap2 and samtools (e.g. using conda).
 
-`conda install -c bioconda minimap2 "samtools>=1.10"`
+`conda install -c bioconda minimap2 "samtools>=1.9"`
 
 ### Usage
 
@@ -68,11 +67,29 @@ You may start from metagenome assembly and processed (quality trimmed etc.) read
 
 `pyyamb --task all -1 Sample_1.R1.fastq.gz Sample_2.R1.fastq.gz -2 Sample_1.R2.fastq.gz Sample_2.R2.fastq.gz -i assembly.fasta -o results/will/be/here --threads 8`
 
-After completion bins could be found in *bins* subfolder in output folder. "-1" bin collects unbinned sequences.
+After completion bins could be found in *bins* subfolder in output folder. "-1" bin collects unbinned sequences. Quality check of resulting bins is strongly recommended, You may use [CheckM](https://github.com/Ecogenomics/CheckM) or [CheckM2](https://github.com/chklovski/CheckM2).
 
 ## Results and benchmarks
 
-pyYAMB will be tested on CAMI dataset soon. YAMB showed quality compared with [CONCOCT](https://github.com/BinPro/CONCOCT) binner (see the [preprint](https://www.biorxiv.org/content/10.1101/521286.abstract) for details).
+pyYAMB was tested on low complexity data set for the 1st CAMI challenge (simulated Illumina HiSeq data, small insert size).
+
+- Number of samples: 1
+- Total Size: 15 Gbp
+- Read length: 2x150 bp
+- Insert size mean: 270 bp
+- Insert size stddev: 27 bp
+
+The run took 12 minutes and 17 seconds on AMD Ryzen 3900X using 8 threads. Completeness and purity results are given below:
+
+|Property|Value|
+|--------|-----|
+|Average completeness (bp)|94.4%|
+|Average completeness (seq)|84.2%|
+|Average purity (bp)|67.1%|
+|Average purity (seq)|56.5%|
+
+
+Earlier YAMB showed quality comparable with [CONCOCT](https://github.com/BinPro/CONCOCT) binner (see the [preprint](https://www.biorxiv.org/content/10.1101/521286.abstract) for details).
 
 
 ## References
