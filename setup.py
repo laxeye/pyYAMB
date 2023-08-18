@@ -37,8 +37,8 @@ setuptools.setup(
         'pysam',
         'matplotlib',
         'numpy',
-        'scikit-learn',
-        'hdbscan',
+        'scikit-learn<=1.2.2',
+        'hdbscan<=0.8.29',
         'pycoverm',
         'regex'
     ]

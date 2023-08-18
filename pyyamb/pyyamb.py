@@ -21,16 +21,19 @@ from pyyamb import __version__
 
 
 def parse_args():
-	logger = logging.getLogger()
+	#logger = logging.getLogger()
 	parser = argparse.ArgumentParser(prog="pyyamb",
 		description=f"pyYAMB metagenome binner ver. {__version__}",
 		formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
 	general_args = parser.add_argument_group(title="General options", description="")
-	general_args.add_argument("--task", required=True,
+	general_args.add_argument("--task", required=True, default='all',
 		choices=["all", "cut", "tetra", "map", "clustering", "make_bins"],
 		help="Task of pipeline: cut (discard short contigs and cut longer), "
-		+ "map (map reads or process mapping file).")
+		+ "tetra (calculate frequencies of 4mers), "
+		+ "map (map reads or process mapping file), "
+		+ "clustering (perform tSNE and HDBSCAN to make clusters), "
+		+ "make_bins (create FASTA files from fragments and clustering file).")
 	general_args.add_argument("-o", "--output", type=str, required=True,
 		help="Output directory.")
 	general_args.add_argument("--min-length", default=1000, type=int,
@@ -53,6 +56,8 @@ def parse_args():
 		help="Print debug messages.")
 	general_args.add_argument("--force", action='store_true',
 		help="Overwrite content of output directory.")
+	general_args.add_argument('--version', action='version',
+		version='%(prog)s {version}'.format(version=__version__))
 
 	input_args = parser.add_argument_group(title="Input files and options")
 	input_args.add_argument("-1", "--pe-1", nargs='*',
@@ -80,7 +85,7 @@ def parse_args():
 		try:
 			os.makedirs(args.output, exist_ok=args.force)
 		except Exception as e:
-			logger.error("Failed to create %s", args.output)
+			logging.error("Failed to create %s", args.output)
 			raise e
 
 	'''Check input'''
@@ -88,14 +93,14 @@ def parse_args():
 		if x:
 			x = os.path.abspath(x)
 			if not os.path.isfile(x):
-				logger.error("File not found: %s", x)
+				logging.error("File not found: %s", x)
 				raise FileNotFoundError(x)
 
 	if args.single_end:
 		args.single_end = list(map(os.path.abspath, args.single_end))
 		for x in args.single_end:
 			if not os.path.isfile(x):
-				logger.error("File not found: %s", x)
+				logging.error("File not found: %s", x)
 				raise FileNotFoundError(x)
 
 	if args.pe_1:
@@ -109,21 +114,27 @@ def parse_args():
 		args.mapping_file = list(map(os.path.abspath, args.mapping_file))
 		for m_file in args.mapping_file:
 			if not os.path.isfile(m_file):
-				logger.error("File not found: %s", m_file)
+				logging.error("File not found: %s", m_file)
 				raise FileNotFoundError(f"{m_file} not found!")
 
 	return args
 
 
-def create_logger():
+def create_logger(args):
 	'''Create logger'''
+	formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 	logger = logging.getLogger("main")
 	logger.setLevel(logging.DEBUG)
-	formatter = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s")
 	ch = logging.StreamHandler()
-	ch.setLevel(logging.DEBUG)
+	if not args.debug:
+		ch.setLevel(logging.INFO)
 	ch.setFormatter(formatter)
 	logger.addHandler(ch)
+	fh = logging.FileHandler(os.path.join(args.output, "pyyamb.log"))
+	fh.setLevel(logging.DEBUG)
+	fh.setFormatter(formatter)
+	logger.addHandler(fh)
+
 	return logger
 
 
@@ -135,15 +146,13 @@ def make_nice_bam(args):
 
 
 def main():
-	logger = create_logger()
 	args = parse_args()
-	if not args.debug:
-		logger.setLevel(logging.INFO)
-	logger.info("Analysis started")
+	logger = create_logger(args)
 	mg_data = pandas.DataFrame()
+	logger.info("Analysis started")
 
 	'''Cut contigs'''
-	if args.task == "cut" or args.task == "all":
+	if args.task in ("cut", "all"):
 		try:
 			fragments = get_fragments(args.assembly, args.fragment_length, args.min_length)
 			args.assembly = write_records_to_fasta(fragments, os.path.join(args.output, 'fragments.fasta'))
@@ -153,7 +162,7 @@ def main():
 			raise e
 
 	'''Count kmers'''
-	if args.task == "tetra" or args.task == "all":
+	if args.task in ("tetra", "all"):
 		try:
 			logger.info("Counting kmers")
 			k_data = kmer_freq_table(args.assembly, args.k_len, args.threads)
@@ -195,7 +204,7 @@ def main():
 			logger.error("File fragment coverage depth not found")
 			raise FileNotFoundError(args.coverage_data)
 
-	if args.task == "clustering" or args.task == "all":
+	if args.task in ("clustering", "all"):
 		'''Merge data, produce Z-scores and dump to file'''
 		mg_data = k_data.merge(cov_data, how='left', on='fragment')
 		z_scores = mg_data.iloc[:, :2].join(

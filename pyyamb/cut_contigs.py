@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
+import os
+import sys
+from math import ceil
 from Bio import SeqIO
 from Bio.SeqRecord import SeqRecord
-import sys
-import os
-from math import ceil
 from pyyamb.utils import write_records_to_fasta
 
 
@@ -14,12 +14,12 @@ def get_fragments(filename, target_length=10000, min_length=1000):
 		seq_length = len(record.seq)
 		if seq_length < min_length:
 			continue
-		elif seq_length < 1.5 * target_length:
+		if seq_length < 1.5 * target_length:
 			fragments.append(record)
 		else:
-			frag_N = round(seq_length / target_length)
-			frag_len = int(ceil(seq_length / frag_N))
-			for i in range(frag_N):
+			frag_count = round(seq_length / target_length)
+			frag_len = int(ceil(seq_length / frag_count))
+			for i in range(frag_count):
 				fragments.append(SeqRecord(
 					record.seq[frag_len * i: frag_len * (i + 1)],
 					id=f"{record.id}_frag_{i}",

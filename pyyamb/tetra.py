@@ -1,52 +1,53 @@
 #!/usr/bin/env python3
-from Bio import SeqIO
-import sys
-import regex
 import os
-import pandas
+import sys
 import multiprocessing as mp
 from itertools import repeat
+import pandas
+import regex
+from Bio import SeqIO
 
 
 def compl_DNA(c) -> str:
-	'''Return complemetary nucleotide'''
-	'''In this script only uppercase nucleotides may appear, otherwise:
+	'''Return complemetary nucleotide
+
+	In this script only uppercase nucleotides may appear, otherwise:
 	if c.islower():
 		c = c.upper()
 	'''
 	if c == 'A':
 		return 'T'
-	elif c == 'C':
+	if c == 'C':
 		return 'G'
-	elif c == 'G':
+	if c == 'G':
 		return 'C'
-	elif c == 'T':
+	if c == 'T':
 		return 'A'
-	else:
-		return c
+	return c
 
 
 def rev_compl_DNA(s) -> str:
+	'''Return reverse complement DNA'''
 	return ''.join(list(map(compl_DNA, s[::-1])))
 
 
-def make_kmer_list(k=4, nr=True):
+def make_kmer_list(k_len=4, nr=True):
 	'''Return list of kmers different (if nr) from their reverse complements'''
 	acgt = ['A', 'C', 'G', 'T']
 	kmers = acgt
-	for _i in range(k - 1):
+	for _i in range(k_len - 1):
 		kmers = [f"{x}{y}" for x in kmers for y in acgt]
 	if nr is False:
 		return kmers
-	else:
-		nr_kmers = []
-		for x in kmers:
-			if rev_compl_DNA(x) not in nr_kmers:
-				nr_kmers.append(x)
-		return nr_kmers
+	nr_kmers = []
+	for x in kmers:
+		if rev_compl_DNA(x) not in nr_kmers:
+			nr_kmers.append(x)
+	return nr_kmers
 
 
 def kmers_freq_single(record, patterns, klen):
+	'''Return record.id, record.len and kmer frequences multiplied by 1000.'''
 	d = {}
 	seq_len = len(record.seq)
 	seq = str(record.seq).upper()
