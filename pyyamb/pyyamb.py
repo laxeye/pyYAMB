@@ -5,18 +5,17 @@ import os
 import pandas
 import seaborn
 import hdbscan
-import pysam
 import pycoverm
 from Bio import SeqIO
 from matplotlib import pyplot
-from numpy import mean
 from sklearn.manifold import TSNE
 from pyyamb.cut_contigs import get_fragments
 from pyyamb.map import map_reads
 from pyyamb.map import view_mapping_file
 from pyyamb.map import sort_mapping_file
-from pyyamb.utils import write_records_to_fasta
 from pyyamb.tetra import kmer_freq_table
+from pyyamb.utils import write_records_to_fasta
+from pyyamb.utils import check_files
 from pyyamb import __version__
 
 
@@ -50,8 +49,8 @@ def parse_args():
 		help="Length of k-mer to calculate their frequencies.")
 	general_args.add_argument("-t", "--threads", type=int, default=1,
 		help="Number of CPU threads to use (where possible).")
-	general_args.add_argument("-m", "--memory-limit", type=int, default=16,
-		help="Memory limit in GB.")
+	general_args.add_argument('-u', '--write-unbinned', action='store_true',
+		help="Write unbinned contigs to file.")
 	general_args.add_argument("-d", "--debug", action='store_true',
 		help="Print debug messages.")
 	general_args.add_argument("--force", action='store_true',
@@ -61,9 +60,11 @@ def parse_args():
 
 	input_args = parser.add_argument_group(title="Input files and options")
 	input_args.add_argument("-1", "--pe-1", nargs='*',
-		help="First (left) paired-end reads, FASTQ [gzipped]. Space-separated if multiple.")
+		help="First (left) paired-end reads, FASTQ [gzipped]. "
+		+ "Space-separated if multiple.")
 	input_args.add_argument("-2", "--pe-2", nargs='*',
-		help="Second (right) paired-end reads, FASTQ [gzipped]. Space-separated if multiple.")
+		help="Second (right) paired-end reads, FASTQ [gzipped]. "
+		+ "Space-separated if multiple.")
 	input_args.add_argument("-s", "--single-end", nargs='*',
 		help="Sinle-end reads, FASTQ [gzipped]. Space-separated if multiple.")
 	input_args.add_argument("-i", "--assembly",
@@ -89,33 +90,24 @@ def parse_args():
 			raise e
 
 	'''Check input'''
-	for x in (args.assembly, args.kmers_data):
+	for x in (
+			args.assembly, args.kmers_data,
+			args.coverage_data, args.clustered_data):
 		if x:
-			x = os.path.abspath(x)
-			if not os.path.isfile(x):
-				logging.error("File not found: %s", x)
-				raise FileNotFoundError(x)
+			check_files([x])
 
 	if args.single_end:
 		args.single_end = list(map(os.path.abspath, args.single_end))
-		for x in args.single_end:
-			if not os.path.isfile(x):
-				logging.error("File not found: %s", x)
-				raise FileNotFoundError(x)
+		check_files(args.single_end)
 
 	if args.pe_1:
 		args.pe_1 = list(map(os.path.abspath, args.pe_1))
 		args.pe_2 = list(map(os.path.abspath, args.pe_2))
-		for f in args.pe_1 + args.pe_2:
-			if not os.path.isfile(f):
-				raise FileNotFoundError(f"Input file {f} not found!")
+		check_files(args.pe_1 + args.pe_2)
 
 	if args.mapping_file:
 		args.mapping_file = list(map(os.path.abspath, args.mapping_file))
-		for m_file in args.mapping_file:
-			if not os.path.isfile(m_file):
-				logging.error("File not found: %s", m_file)
-				raise FileNotFoundError(f"{m_file} not found!")
+		check_files(args.mapping_file)
 
 	return args
 
@@ -141,7 +133,7 @@ def create_logger(args):
 def make_nice_bam(args):
 	'''Map reads and produce a sorted BAM file(s)'''
 	sam_files = map_reads(args)
-	bam_files = [view_mapping_file(args, sam_file, compress=False) for sam_file in sam_files]
+	bam_files = [view_mapping_file(args, sam, compress=False) for sam in sam_files]
 	return [sort_mapping_file(args, bam_file) for bam_file in bam_files]
 
 
@@ -154,8 +146,13 @@ def main():
 	'''Cut contigs'''
 	if args.task in ("cut", "all"):
 		try:
-			fragments = get_fragments(args.assembly, args.fragment_length, args.min_length)
-			args.assembly = write_records_to_fasta(fragments, os.path.join(args.output, 'fragments.fasta'))
+			fragments = get_fragments(
+				args.assembly,
+				args.fragment_length,
+				args.min_length)
+			args.assembly = write_records_to_fasta(
+				fragments, 
+				os.path.join(args.output, 'fragments.fasta'))
 			logger.info("Contigs fragmented.")
 		except Exception as e:
 			logger.error("Error during contig fragmentation.")
@@ -174,8 +171,12 @@ def main():
 			raise e
 
 	'''Map reads with minimap2'''
-	if args.task == "map" or (args.task == 'all' and (args.pe_1 or args.single_end or args.mapping_file)):
-		sorted_bam_files = args.mapping_file if args.mapping_file else make_nice_bam(args)
+	if (args.task == "map" or 
+		(args.task == 'all' and (args.pe_1 or args.single_end or args.mapping_file))):
+		if args.mapping_file:
+			sorted_bam_files = args.mapping_file
+		else:
+			sorted_bam_files = make_nice_bam(args)
 		logger.info("Extracting coverage")
 		samples = [os.path.splitext(os.path.basename(x))[0] for x in sorted_bam_files]
 		contigs, mean_covs = pycoverm.get_coverages_from_bam(
@@ -209,13 +210,16 @@ def main():
 		mg_data = k_data.merge(cov_data, how='left', on='fragment')
 		z_scores = mg_data.iloc[:, :2].join(
 			mg_data.iloc[:, 2:].apply(
-				lambda x: (x - x.mean()) / x.std(), axis=0
+				lambda x: (x - x.mean()) / x.std(),
+				axis=0
 			)
 		)
 		z_scores.to_csv(os.path.join(args.output, "z-scored_data.csv"))
 
 		logger.info('tSNE data reduction.')
-		tsne_pca = TSNE(init='pca', perplexity=args.perplexity).fit_transform(z_scores.iloc[:, 2:])
+		tsne_pca = TSNE(
+			init='pca',
+			perplexity=args.perplexity).fit_transform(z_scores.iloc[:, 2:])
 		dfTSNE = pandas.DataFrame.join(
 			pandas.DataFrame(tsne_pca, columns=['tsne1', 'tsne2'], index=k_data.index),
 			z_scores[['fragment','length']]
@@ -230,7 +234,10 @@ def main():
 		dfTSNE = dfTSNE.join(
 			pandas.DataFrame(cluster_labels, columns=['cluster'])
 		)
-		fname_prefix = f"pyyamb.tp_{args.perplexity}_mcl_{args.min_cluster_size}_ms_{args.min_samples}"
+		fname_prefix = "_".join([
+			"pyyamb.tp", str(args.perplexity),
+			"mcl", str(args.min_cluster_size),
+			"ms", str(args.min_samples)])
 		dfTSNE.to_csv(os.path.join(args.output, f"{fname_prefix}.csv"))
 		clusters = set(dfTSNE['cluster'])
 		logger.info("HDBSCAN found %s clusters", len(clusters))
@@ -249,19 +256,22 @@ def main():
 		if args.task == "make_bins":
 			dfTSNE = pandas.read_csv(os.path.join(args.clustered_data))
 		clusters = set(dfTSNE['cluster'])
-		logger.info("Writing %s bins", len(clusters))
 		frag_records = list(SeqIO.parse(args.assembly, "fasta"))
 		bin_dir = os.path.join(args.output, "bins")
 		os.makedirs(bin_dir, exist_ok=args.force)
+		if not args.write_unbinned and -1 in clusters:
+			clusters.remove(-1)
+		logger.info("Writing %s bins", len(clusters))
 		for cluster in clusters:
 			frag_names = list(dfTSNE[dfTSNE['cluster'] == cluster]['fragment'])
-			output_bin = os.path.join(bin_dir, f"pyyamb.bin.{cluster}.fna")
+			if args.write_unbinned and cluster == -1:
+				output_bin = os.path.join(bin_dir, "pyyamb.unbinned.fna")
+			else:
+				output_bin = os.path.join(bin_dir, f"pyyamb.bin.{cluster}.fna")
 			records = (x for x in frag_records if x.id in frag_names)
 			write_records_to_fasta(records, output_bin, glue=True)
 
 		logger.info("%s bins had been written", len(clusters))
-
-	'''CheckM'''
 
 	logger.info("Analysis finished")
 

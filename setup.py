@@ -38,7 +38,7 @@ setuptools.setup(
         'matplotlib',
         'numpy',
         'scikit-learn<=1.2.2',
-        'hdbscan<=0.8.29',
+        'hdbscan>=0.8.31',
         'pycoverm',
         'regex'
     ]

@@ -56,14 +56,17 @@ def kmers_freq_single(record, patterns, klen):
 	seq_rc = str(record.seq.reverse_complement()).upper()
 	for (i, j) in patterns:
 		d[i] = d.get(i, 0) + len(regex.findall(j, seq_rc, overlapped=True))
-	return [record.id, seq_len] + [1000 * d.get(i, 0) / (2 * (seq_len - klen)) for i, _ in patterns]
+	freq_list = [1000 * d.get(i, 0) / (2 * (seq_len - klen)) for i, _ in patterns]
+	return [record.id, seq_len] + freq_list
 
 
 def kmers_freq(records, kmers, num_pools=1):
 	patterns = [(i, regex.compile(i)) for i in kmers]
 	klen = len(kmers[0])
 	with mp.Pool(num_pools) as p:
-		return p.starmap(kmers_freq_single, zip(records, repeat(patterns), repeat(klen)))
+		return p.starmap(
+			kmers_freq_single,
+			zip(records, repeat(patterns), repeat(klen)))
 
 
 def kmer_freq_table(filename, k_len=4, num_pools=1):

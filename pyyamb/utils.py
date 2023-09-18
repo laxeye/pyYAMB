@@ -1,4 +1,5 @@
 import logging
+import os.path
 import subprocess
 from Bio import SeqIO
 import regex
@@ -19,6 +20,13 @@ def run_external(cmd, keep_stdout=False, keep_stderr=True):
 		logger.error("stderr message:")
 		logger.error(e.stderr)
 		raise e
+
+
+def check_files(file_list):
+	for x in file_list:
+		if not os.path.isfile(x):
+			logging.error("Input file not found: %s", x)
+			raise FileNotFoundError(x)
 
 
 def write_records_to_fasta(records, path, glue=False):
