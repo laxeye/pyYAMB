@@ -3,9 +3,11 @@ import argparse
 import logging
 import os
 import pandas
+import re
 import seaborn
 import hdbscan
 import pycoverm
+from statistics import mode
 from Bio import SeqIO
 from matplotlib import pyplot
 from sklearn.manifold import TSNE
@@ -20,7 +22,7 @@ from pyyamb import __version__
 
 
 def parse_args():
-	#logger = logging.getLogger()
+	# logger = logging.getLogger()
 	parser = argparse.ArgumentParser(prog="pyyamb",
 		description=f"pyYAMB metagenome binner ver. {__version__}",
 		formatter_class=argparse.ArgumentDefaultsHelpFormatter)
@@ -53,6 +55,8 @@ def parse_args():
 		help="Write unbinned contigs to file.")
 	general_args.add_argument("-d", "--debug", action='store_true',
 		help="Print debug messages.")
+	general_args.add_argument("--majority", action='store_true',
+		help="All fragments from one contig go to the most represented bin.")
 	general_args.add_argument("--force", action='store_true',
 		help="Overwrite content of output directory.")
 	general_args.add_argument('--version', action='version',
@@ -151,7 +155,7 @@ def main():
 				args.fragment_length,
 				args.min_length)
 			args.assembly = write_records_to_fasta(
-				fragments, 
+				fragments,
 				os.path.join(args.output, 'fragments.fasta'))
 			logger.info("Contigs fragmented.")
 		except Exception as e:
@@ -171,7 +175,7 @@ def main():
 			raise e
 
 	'''Map reads with minimap2'''
-	if (args.task == "map" or 
+	if (args.task == "map" or
 		(args.task == 'all' and (args.pe_1 or args.single_end or args.mapping_file))):
 		if args.mapping_file:
 			sorted_bam_files = args.mapping_file
@@ -222,7 +226,7 @@ def main():
 			perplexity=args.perplexity).fit_transform(z_scores.iloc[:, 2:])
 		dfTSNE = pandas.DataFrame.join(
 			pandas.DataFrame(tsne_pca, columns=['tsne1', 'tsne2'], index=k_data.index),
-			z_scores[['fragment','length']]
+			z_scores[['fragment', 'length']]
 		)
 
 		logger.info('HDBSCAN data clustering.')
@@ -255,23 +259,71 @@ def main():
 	if args.task in ["make_bins", "clustering", "all"]:
 		if args.task == "make_bins":
 			dfTSNE = pandas.read_csv(os.path.join(args.clustered_data))
-		clusters = set(dfTSNE['cluster'])
 		frag_records = list(SeqIO.parse(args.assembly, "fasta"))
 		bin_dir = os.path.join(args.output, "bins")
 		os.makedirs(bin_dir, exist_ok=args.force)
-		if not args.write_unbinned and -1 in clusters:
-			clusters.remove(-1)
-		logger.info("Writing %s bins", len(clusters))
-		for cluster in clusters:
-			frag_names = list(dfTSNE[dfTSNE['cluster'] == cluster]['fragment'])
-			if args.write_unbinned and cluster == -1:
-				output_bin = os.path.join(bin_dir, "pyyamb.unbinned.fna")
-			else:
-				output_bin = os.path.join(bin_dir, f"pyyamb.bin.{cluster}.fna")
-			records = (x for x in frag_records if x.id in frag_names)
-			write_records_to_fasta(records, output_bin, glue=True)
 
-		logger.info("%s bins had been written", len(clusters))
+		if args.majority:
+			pattern = re.compile(r'^(.+)_frag_(\d+)$')
+			buffer = []
+			c_prev = None
+			bin_N = []
+			out_dict = dict()
+			with open(os.path.join(args.output, "pyyamb.contig2bin.txt"), 'w') as c2b:
+				for i in dfTSNE.index:
+					row = dfTSNE.iloc[i]
+					cluster, frag = row['cluster'], row['fragment']
+					m = pattern.match(frag)
+					if m:
+						contig = m.group(1)
+						if contig == c_prev:
+							buffer.append(frag)
+							bin_N.append(cluster)
+						else:
+							if len(buffer) > 0:
+								final_bin = mode(bin_N)
+								out_dict[final_bin] = out_dict.get(final_bin, []) + buffer
+								c2b.write(f'{c_prev},{final_bin}\n')
+							buffer = [frag]
+							bin_N = [cluster]
+							c_prev = contig
+					else:
+						if len(buffer) > 0:
+							final_bin = mode(bin_N)
+							out_dict[final_bin] = out_dict.get(final_bin, []) + buffer
+							c2b.write(f'{c_prev},{final_bin}\n')
+						else:
+							out_dict[cluster] = out_dict.get(cluster, []) + [frag]
+							c2b.write(f'{frag},{final_bin}\n')
+						buffer = []
+			bin_count = 0
+			for k, frag_names in out_dict.items():
+				if int(k) != -1:
+					bin_file = os.path.join(bin_dir, f"pyyamb.bin.{k}.fna")
+				elif args.write_unbinned and int(k) == -1:
+					bin_file = os.path.join(bin_dir, "pyyamb.unbinned.fna")
+				else:
+					continue
+				records = (x for x in frag_records if x.id in frag_names)
+				write_records_to_fasta(records, bin_file, glue=True)
+				bin_count += 1
+			logger.info("%s bins had been written", bin_count)
+
+		else:
+			clusters = set(dfTSNE['cluster'])
+			if not args.write_unbinned and -1 in clusters:
+				clusters.remove(-1)
+			logger.info("Writing %s bins", len(clusters))
+			for cluster in clusters:
+				frag_names = list(dfTSNE[dfTSNE['cluster'] == cluster]['fragment'])
+				if args.write_unbinned and cluster == -1:
+					output_bin = os.path.join(bin_dir, "pyyamb.unbinned.fna")
+				else:
+					output_bin = os.path.join(bin_dir, f"pyyamb.bin.{cluster}.fna")
+				records = (x for x in frag_records if x.id in frag_names)
+				write_records_to_fasta(records, output_bin, glue=True)
+
+			logger.info("%s bins had been written", len(clusters))
 
 	logger.info("Analysis finished")
 
