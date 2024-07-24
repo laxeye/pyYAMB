@@ -294,7 +294,7 @@ def main():
 							c2b.write(f'{c_prev},{final_bin}\n')
 						else:
 							out_dict[cluster] = out_dict.get(cluster, []) + [frag]
-							c2b.write(f'{frag},{final_bin}\n')
+							c2b.write(f'{frag},{cluster}\n')
 						buffer = []
 			bin_count = 0
 			for k, frag_names in out_dict.items():
