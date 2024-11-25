@@ -5,7 +5,7 @@ import os
 import pandas
 import re
 import seaborn
-import hdbscan
+import sklearn.cluster
 import pycoverm
 from statistics import mode
 from Bio import SeqIO
@@ -230,7 +230,7 @@ def main():
 		)
 
 		logger.info('HDBSCAN data clustering.')
-		clusterer = hdbscan.HDBSCAN(
+		clusterer = sklearn.cluster.HDBSCAN(
 			min_cluster_size=args.min_cluster_size,
 			min_samples=args.min_samples
 		)

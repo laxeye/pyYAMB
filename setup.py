@@ -5,11 +5,11 @@ with open("README.md", "r") as fh:
     long_description = fh.read()
 
 setuptools.setup(
-    name="pyYAMB",
+    name="pyyamb",
     version=pyyamb.__version__,
     author="Aleksei Korzhenkov",
     author_email="oscypek@ya.ru",
-    description="Yet Another Metagenome Binner",
+    description="Python implementation of YAMB (Yet Another Metagenome Binner)",
     long_description=long_description,
     long_description_content_type="text/markdown",
     url="https://github.com/laxeye/pyyamb",
@@ -29,7 +29,7 @@ setuptools.setup(
         "Operating System :: POSIX :: Linux",
         "Topic :: Scientific/Engineering :: Bio-Informatics"
     ],
-    python_requires='>=3.8',
+    python_requires='>=3.10',
     install_requires=[
         'biopython',
         'pandas',
@@ -37,8 +37,7 @@ setuptools.setup(
         'pysam',
         'matplotlib',
         'numpy',
-        'scikit-learn<=1.2.2',
-        'hdbscan>=0.8.31',
+        'scikit-learn>=1.3',
         'pycoverm',
         'regex'
     ]
